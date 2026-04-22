@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elderly Fall Monitor</title>
+    <style>
+      body { 
+        font-family: Arial, sans-serif;
+        max-width: 600px;
+        margin: 40px auto;
+        padding: 20px;
+      }
+      h1 { 
+        color: #d9534f;
+      }
+      .config-section {
+        background: #f4f4f4;
+        padding: 15px;
+        margin-bottom: 20px;
+        border-radius: 5px;
+        border: 1px solid #ddd;
+      }
+      .current-email-display {
+        margin-top: 10px;
+        font-size: 0.9em;
+        color: #555;
+      }
+      .fall-item {
+        background: #fdf2f2; border-left: 5px solid #d9534f; padding: 15px; margin-bottom: 10px;
+      }
+      .timestamp {
+        font-weight: bold;
+      }
+      .severity {
+        color: #555; font-size: 0.9em;
+      }
+      #status {
+        font-style: italic; color: #777; margin-bottom: 20px;
+      }
+    </style>
+  </head>
+  <body>
+
+    <h1>Fall Monitoring Dashboard</h1>
+
+    <div class="config-section">
+      <label for="alert-email"><strong>Alert Email:</strong></label>
+      <input type="email" id="alert-email" placeholder="Enter recipient email">
+      <button onclick="updateEmail()">Save Configuration</button>
+      <span id="email-status" style="color: green; margin-left: 10px; display: none;">Saved!</span>
+
+      <div class="current-email-display">
+        Currently alerting: <strong id="current-alert-email">Loading...</strong>
+      </div>
+    </div>
+
+    <div id="status">Monitoring active... polling every 3 seconds.</div>
+
+    <div id="fall-log"></div>
+
+    <script>
+      const fallLogContainer = document.getElementById('fall-log');
+
+      async function updateEmail() {
+        const emailInput = document.getElementById('alert-email').value;
+        if (!emailInput) return;
+
+        try {
+          const response = await fetch('/api/config/email', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ email: emailInput })
+          });
+
+          if (response.ok) {
+            const statusText = document.getElementById('email-status');
+            statusText.style.display = 'inline';
+
+            // update current email text immediately without refreshing the page
+            document.getElementById('current-alert-email').textContent = emailInput;
+
+            setTimeout(() => {
+              statusText.style.display = 'none';
+            }, 2000);
+          } else {
+            alert("Failed to update email configuration.");
+          }
+        } catch (error) {
+          console.error("Error updating email:", error);
+        }
+      }
+
+      function appendFallToUI(timestamp, severity) {
+        const div = document.createElement('div');
+        div.className = 'fall-item';
+        let severityLevel = "Light Fall";
+        if (severity >= 50) {
+          severityLevel = "Heavy Fall";
+        }
+        else if (severity >= 35) {
+          severityLevel = "Moderate Fall";
+        }
+        div.innerHTML = `<div class="timestamp">${timestamp}</div>
+                             <div class="severity">Severity: ${severityLevel}</div>`;
+        fallLogContainer.insertBefore(div, fallLogContainer.firstChild);
+      }
+
+      // load all previous falls when the webpage is loaded
+      async function loadHistoricalFalls() {
+        try {
+          // get all previous falls
+          const response = await fetch('/api/falls');
+          const data = await response.json(); // data looks like: {falls: [...], current_email: "..."}
+
+          // set current email to display the email
+          const emailDisplay = document.getElementById('current-alert-email');
+          if (data.current_email) {
+            emailDisplay.textContent = data.current_email;
+            document.getElementById('alert-email').value = data.current_email;
+          } else {
+            emailDisplay.textContent = "None configured";
+          }
+
+          // loop through falls array and add them to the UI
+          data.falls.forEach(fall => appendFallToUI(fall.timestamp, fall.severity));
+        } catch (error) {
+          console.error("Error loading historical falls:", error);
+          document.getElementById('current-alert-email').textContent = "Error loading configuration";
+        }
+      }
+
+      async function checkNewFalls() {
+        try {
+          const response = await fetch('/api/fall-detector');
+          const newFalls = await response.json();
+
+          if (newFalls.length > 0) {
+            newFalls.forEach(fall => appendFallToUI(fall.timestamp, fall.severity));
+          }
+        } catch (error) {
+          console.error("Error checking for new falls:", error);
+        }
+      }
+
+      window.onload = () => {
+        loadHistoricalFalls();
+        setInterval(checkNewFalls, 3000);
+      };
+    </script>
+  </body>
+</html>
